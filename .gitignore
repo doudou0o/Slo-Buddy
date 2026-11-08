@@ -1,0 +1,23 @@
+# Per-installation settings, identities and runtime data
+/config/buddy.json
+/config/buddy.json.*
+/.private/
+/STATUS.md
+/node_modules/
+/logs/
+/artifacts/
+/workspace/
+/dist/
+.env
+.env.*
+*.env
+!.env.example
+!*.env.example
+*.sqlite
+*.sqlite-*
+*.db
+*.db-*
+*.pem
+*.key
+.DS_Store
+npm-debug.log*

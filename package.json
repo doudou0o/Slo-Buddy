@@ -1,0 +1,46 @@
+{
+  "name": "slo-buddy",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "start": "node src/main.mjs",
+    "test": "node scripts/setup.mjs && node --test",
+    "smoke": "node scripts/smoke.mjs",
+    "pair": "node scripts/pair-code.mjs",
+    "service": "node scripts/service.mjs",
+    "setup": "node scripts/setup.mjs",
+    "package": "node scripts/package.mjs"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "Configurable personal Feishu buddy with scoped tools and persistent scheduler",
+  "dependencies": {
+    "@larksuiteoapi/node-sdk": "^1.74.0",
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@openai/codex": "^0.155.1",
+    "@openai/codex-sdk": "^0.155.1",
+    "chinese-days": "^1.5.9",
+    "cron-parser": "^5.10.2",
+    "playwright": "^1.64.1",
+    "rss-parser": "^3.13.0",
+    "sql.js": "^1.14.2",
+    "undici": "^6.29.0",
+    "zod": "^4.6.5"
+  },
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=22"
+  },
+  "files": [
+    "src/",
+    "scripts/",
+    "skills/",
+    "config/buddy.example.json",
+    "examples/",
+    "docs/",
+    "test/",
+    "README.md"
+  ]
+}

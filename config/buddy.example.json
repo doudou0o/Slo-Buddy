@@ -1,0 +1,120 @@
+{
+  "name": "Slo-Buddy",
+  "port": 18343,
+  "model": "gpt-6-astra",
+  "reasoningEffort": "low",
+  "historyLimit": 50,
+  "apps": [
+    {
+      "id": "main",
+      "name": "我的飞书伙伴",
+      "credentials": ".private/apps/main.env",
+      "enabled": false
+    }
+  ],
+  "persona": {
+    "personality": "",
+    "habits": "",
+    "tone": "",
+    "groupRules": ""
+  },
+  "policies": {
+    "private": {
+      "localFiles": false,
+      "documentRead": false,
+      "documentWrite": false,
+      "allowedDocuments": [],
+      "allowedFolders": [],
+      "allowAllDocuments": false,
+      "imageGeneration": false,
+      "allowCreateDocuments": false,
+      "localFileWrite": false
+    },
+    "group": {
+      "localFiles": false,
+      "documentRead": false,
+      "documentWrite": false,
+      "allowedDocuments": [],
+      "allowedFolders": [],
+      "allowAllDocuments": false,
+      "imageGeneration": false,
+      "allowCreateDocuments": false,
+      "localFileWrite": false
+    }
+  },
+  "schedules": [
+    {
+      "id": "morning-weather-alert",
+      "name": "早间天气与空气提醒",
+      "type": "weather",
+      "enabled": false,
+      "app": "main",
+      "chatId": "YOUR_CHAT_ID",
+      "cron": "0 6 * * *",
+      "timezone": "Asia/Shanghai",
+      "prompt": "按配置城市的天气和空气质量条件生成早间卡片；恶劣天气附安全提醒。",
+      "weather": {
+        "city": "请配置城市",
+        "latitude": 0,
+        "longitude": 0,
+        "windKmh": 38.9,
+        "gustKmh": 61.9,
+        "airQuality": true,
+        "generateDailyImage": true,
+        "dailyGreeting": false
+      }
+    },
+    {
+      "id": "group-hourly-smalltalk",
+      "name": "工作日随机冒泡",
+      "type": "proactive",
+      "enabled": false,
+      "app": "main",
+      "chatId": "YOUR_CHAT_ID",
+      "cron": "10 6-23 * * 1-5",
+      "timezone": "Asia/Shanghai",
+      "prompt": "按工作日、群活跃度、天气和冷却规则判断是否发送自然闲聊；仅使用当前群公开记忆。",
+      "weather": {
+        "city": "请配置城市",
+        "latitude": 0,
+        "longitude": 0,
+        "windKmh": 38.9,
+        "gustKmh": 61.9,
+        "airQuality": true,
+        "generateDailyImage": true,
+        "dailyGreeting": false
+      }
+    },
+    {
+      "id": "group-nightly-diary",
+      "name": "群日记",
+      "type": "diary",
+      "enabled": false,
+      "app": "main",
+      "chatId": "YOUR_CHAT_ID",
+      "cron": "30 23 * * *",
+      "timezone": "Asia/Shanghai",
+      "prompt": "用本群伙伴的第一人称写当天日记，按内容决定是否配插画，不编造事实，不读取其他会话。",
+      "diary": {
+        "documentId": "YOUR_DOCUMENT_ID",
+        "url": "",
+        "folderToken": "",
+        "illustrate": true
+      }
+    }
+  ],
+  "inheritGlobalPersona": false,
+  "botMessages": {
+    "enabled": false,
+    "allowlist": [],
+    "maxRounds": 3,
+    "cooldownSeconds": 10
+  },
+  "memory": {
+    "engine": "slo",
+    "enabled": true
+  },
+  "browser": {
+    "enabled": false
+  }
+}

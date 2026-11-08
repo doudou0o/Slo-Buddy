@@ -1,0 +1,7 @@
+import test from 'node:test';import assert from 'node:assert/strict';import {TaskPool} from '../src/task-pool.mjs';
+test('bounded concurrency with same-chat serialization and failure recovery',async()=>{
+ const pool=new TaskPool(2),releases=[],order=[];let active=0,max=0;
+ const run=(key,id)=>pool.run(key,async()=>{order.push(id);active++;max=Math.max(max,active);await new Promise(r=>releases.push(()=>{active--;r();}));});
+ const jobs=[run('a','a1'),run('a','a2'),run('b','b1'),run('c','c1')];await new Promise(r=>setImmediate(r));assert.deepEqual(order,['a1','b1']);releases.shift()();await new Promise(r=>setImmediate(r));assert.equal(order.length,3);while(releases.length){releases.shift()();await new Promise(r=>setImmediate(r));}await Promise.all(jobs);assert.equal(max,2);await assert.rejects(pool.run('a',()=>{throw Error('fail');}));assert.equal(await pool.run('a',()=>42),42);
+});
+test('aborted waiting requests release immediately without consuming a slot',async()=>{const pool=new TaskPool(1);let release;const first=pool.run('a',()=>new Promise(r=>release=r));await new Promise(r=>setImmediate(r));const controller=new AbortController();const waiting=pool.run('b',()=>{throw Error('must not run');},controller.signal);await new Promise(r=>setImmediate(r));controller.abort(Error('cancelled'));await assert.rejects(waiting,/cancelled/);release();await first;assert.equal(await pool.run('c',()=>true),true);});
