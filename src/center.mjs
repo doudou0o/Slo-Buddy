@@ -1,13 +1,15 @@
+import {importHistoricalClues} from './companionship-import.mjs';
+import {companionshipConfig,companionshipDefaults} from './companionship-config.mjs';
 import {scheduledAction} from './chat-schedules.mjs';
 import {reminderAction} from './reminders.mjs';
 import {readLogs} from './log-view.mjs';
 import {memoryAction} from './memory-tools.mjs';
 import {memoryScope} from './local-memory.mjs';
-import http from 'node:http';import fs from 'node:fs';import path from 'node:path';import crypto from 'node:crypto';import {root,loadConfig,saveConfig,credentials} from './config.mjs';
+import http from 'node:http';import fs from 'node:fs';import path from 'node:path';import crypto from 'node:crypto';import {root,loadConfig as readConfig,saveConfig as writeConfig,credentials} from './config.mjs';
 import {basePersonaStatus} from './persona.mjs';
 import {loadMemory,saveMemory} from './memory.mjs';
 import {mentionTargets} from './mentions.mjs';
-export function startCenter({browserAction,apps,scheduler,manageApp,brokerToken,sendMention,memory,memoryRequests=new Map(),sendCard,port=loadConfig().port}){
+export function startCenter({browserAction,apps,scheduler,manageApp,brokerToken,sendMention,memory,memoryRequests=new Map(),companionship,sendCard,loadConfig=readConfig,saveConfig=writeConfig,port=loadConfig().port}){
  const token=crypto.randomBytes(24).toString('hex');
  const server=http.createServer(async(req,res)=>{
   const host='127.0.0.1:'+server.address().port;if(req.headers.host!==host){res.writeHead(403);res.end();return;}
@@ -18,7 +20,7 @@ export function startCenter({browserAction,apps,scheduler,manageApp,brokerToken,
 
    if(req.method==='GET'&&req.url==='/api/memory'){json(loadMemory());return;}
    if(req.method==='GET'&&req.url.startsWith('/api/logs')){const url=new URL(req.url,'http://'+host);const secrets=[];for(const app of loadConfig().apps)try{const c=credentials(app);secrets.push(c.FEISHU_APP_SECRET);}catch{}json(readLogs(root,{app:url.searchParams.get('app')||'',errorsOnly:url.searchParams.get('errors')==='1',secrets}));return;}
-   if(req.method==='GET'&&req.url==='/api/state'){json({config:loadConfig(),basePersona:basePersonaStatus(loadConfig().inheritGlobalPersona === true),runs:scheduler.state,apps:[...apps].map(([id,a])=>({id,name:a.name,connection:a.ws.getConnectionStatus().state,memoryTargets:Object.entries(a.store.data.chats||{}).map(([id,c])=>({id,type:c.type})),memoryTopics:Object.entries(a.store.data.topics||{}).map(([id,t])=>({id,chat:t.chatId})),observedBots:a.store.data.observedBots||{},mentionTargets:Object.fromEntries((a.store.data.groups||[]).map(chat=>[chat,mentionTargets(a.store.data,chat)])),pairCommand:a.store.data.users.length?null:'/pair '+a.store.data.pairing,paired:a.store.data.users.length>0,chats:[...new Set([...Object.keys(a.store.data.chats||{}),...(a.store.data.groups||[]),...Object.keys(a.store.data.history||{}).map(k=>k.split(':').at(-1))])]}))});return;}
+   if(req.method==='GET'&&req.url==='/api/state'){json({config:loadConfig(),companionship:{config:companionshipConfig(loadConfig()),defaults:companionshipDefaults},basePersona:basePersonaStatus(loadConfig().inheritGlobalPersona === true),runs:scheduler.state,apps:[...apps].map(([id,a])=>({id,name:a.name,connection:a.ws.getConnectionStatus().state,memoryTargets:Object.entries(a.store.data.chats||{}).map(([id,c])=>({id,type:c.type})),memoryTopics:Object.entries(a.store.data.topics||{}).map(([id,t])=>({id,chat:t.chatId})),observedBots:a.store.data.observedBots||{},mentionTargets:Object.fromEntries((a.store.data.groups||[]).map(chat=>[chat,mentionTargets(a.store.data,chat)])),pairCommand:a.store.data.users.length?null:'/pair '+a.store.data.pairing,paired:a.store.data.users.length>0,chats:[...new Set([...Object.keys(a.store.data.chats||{}),...(a.store.data.groups||[]),...Object.keys(a.store.data.history||{}).map(k=>k.split(':').at(-1))])]}))});return;}
    if(req.method==='POST'){
     if(req.url==='/internal/schedules'){if(!brokerToken||req.headers['x-buddy-capability']!==brokerToken)throw Error('工具来源验证失败');let body='';for await(const chunk of req){body+=chunk;if(body.length>20000)throw Error('请求过大');}const v=JSON.parse(body),context=memoryRequests.get(v.context);if(!context)throw Error('定时任务请求已失效或未授权');const app=apps.get(context.scope.app);if(!app)throw Error('应用未连接');json(scheduledAction({context,action:v.action,args:v.args,load:loadConfig,save:saveConfig,state:scheduler.state,targets:mentionTargets(app.store.data,context.scope.chat)}));return;}
     if(req.url==='/internal/reminders'){if(!brokerToken||req.headers['x-buddy-capability']!==brokerToken)throw Error('工具来源验证失败');let body='';for await(const chunk of req){body+=chunk;if(body.length>10000)throw Error('请求过大');}const v=JSON.parse(body),context=memoryRequests.get(v.context);if(!context)throw Error('提醒请求已失效或未授权');json(reminderAction({context,action:v.action,args:v.args,load:loadConfig,save:saveConfig,state:scheduler.state}));return;}
@@ -29,6 +31,13 @@ export function startCenter({browserAction,apps,scheduler,manageApp,brokerToken,
     if(req.url==='/internal/mention'){if(!brokerToken||req.headers['x-buddy-capability']!==brokerToken)throw Error('工具来源验证失败');let input='';for await(const chunk of req){input+=chunk;if(input.length>20000)throw Error('请求过大');}const v=JSON.parse(input);json(await sendMention(v.app,v.chatId,v.ids,v.text,v.topicId));return;}
     if(req.headers.origin!=='http://'+host||req.headers['x-buddy-token']!==token)throw Error('来源验证失败');
     let body='';for await(const chunk of req){body+=chunk;if(body.length>200000)throw Error('配置过大');}const value=JSON.parse(body);
+    if(req.url==='/api/companionship-config'){const config=loadConfig();config.companionship=value;saveConfig(config);json({ok:true,message:'主动相处设置已保存，下一次检查生效。'});return;}
+    if(req.url==='/api/companionship-query'||req.url==='/api/companionship-clue'||req.url==='/api/companionship-import'){
+     if(!companionship)throw Error('主动相处尚未加载');const t=value.target,a=apps.get(t?.app),data=a?.store.data;
+     if(!t||!['p2p','group'].includes(t.type)||!(t.type==='group'?data?.groups?.includes(t.chat):data?.chats?.[t.chat]?.type==='p2p')||(t.topic&&data?.topics?.[t.topic]?.chatId!==t.chat))throw Error('请选择已授权会话');
+     if(req.url==='/api/companionship-import'){json({ok:true,...await importHistoricalClues({app:a,target:t,operations:value.operations,store:companionship.store,config:loadConfig()})});return;}
+     if(req.url==='/api/companionship-clue'){companionship.store.change(t,value.id,value.action);json({ok:true,message:value.action==='delete'?'线索已删除，关联候选已失效。':'已停止跟进。'});}else json(companionship.store.view(t));return;
+    }
     if(req.url==='/api/memory-query'){const a=apps.get(value.app),chat=a?.store.data.chats?.[value.chat];if(!chat)throw Error('请先选择已授权会话');if(value.topic&&a.store.data.topics?.[value.topic]?.chatId!==value.chat)throw Error('话题不属于所选群');const scope=memoryScope(value.app,{chat_id:value.chat,chat_type:chat.type,thread_id:value.topic||''},a.store.data.users[0]);json(memory.retrieve(scope,String(value.query||'').slice(0,2000)));return;}
     if(req.url==='/api/local-memory'){json({ok:true,entry:memory.update(value.id,value),message:'记忆已更新，下一次请求生效'});return;}
     if(req.url==='/api/memory'){const memory=saveMemory(value);json({ok:true,updatedAt:memory.updatedAt,message:'知识已保存，下一次任务读取最新内容。'});return;}

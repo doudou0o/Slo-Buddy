@@ -43,8 +43,8 @@ export class Store {
 }
 
 export class Bot {
-  constructor({ store, agent, send, prepareMedia, addThinking = async () => null, removeThinking = async () => {}, resolveSender = async () => null, onConversation = () => {}, prepareContext = async () => ({text:"",images:[]}), historyLimit = () => 40, botMessages = () => defaultBotMessages, botOpenId = '', allowedUsers = [], timeoutMs = 600000, log = () => {} }) {
-    Object.assign(this, { store, agent, send, prepareMedia, addThinking, removeThinking, resolveSender, prepareContext, onConversation, historyLimit, botMessages, botOpenId, allowedUsers, timeoutMs, log });
+  constructor({ store, agent, send, prepareMedia, addThinking = async () => null, removeThinking = async () => {}, resolveSender = async () => null, onConversation = () => {}, onObserved = () => {}, shouldReply = () => false, prepareContext = async () => ({text:"",images:[]}), historyLimit = () => 40, botMessages = () => defaultBotMessages, botOpenId = '', allowedUsers = [], timeoutMs = 600000, log = () => {} }) {
+    Object.assign(this, { store, agent, send, prepareMedia, addThinking, removeThinking, resolveSender, prepareContext, onConversation, onObserved, shouldReply, historyLimit, botMessages, botOpenId, allowedUsers, timeoutMs, log });
     this.active = new Map();
     this.pending = new Set();
     this.queues = new Map();
@@ -56,7 +56,11 @@ export class Bot {
     const { message: m, sender } = event ?? {};
     const user = sender?.sender_id?.open_id;
     if (!m?.message_id || !m.chat_id || !user || !['user','bot'].includes(sender.sender_type) || !['p2p', 'group'].includes(m.chat_type)) return;
-    if (m.chat_type === 'group' && (!this.botOpenId || !m.mentions?.some(mention => mention.id?.open_id === this.botOpenId))) {
+    if(sender.sender_type==='user'&&(m.chat_type==='group'?this.store.data.groups?.includes(m.chat_id):(this.allowedUsers.length?this.allowedUsers:this.store.data.users).includes(user))){
+      try{this.onObserved({message:m,sender});}catch(error){this.log('companionship_observe_failed',{error:error.message});}
+    }
+    const directReply=sender.sender_type==='user'&&this.store.data.groups?.includes(m.chat_id)&&this.shouldReply({message:m,sender});
+    if (!directReply && m.chat_type === 'group' && (!this.botOpenId || !m.mentions?.some(mention => mention.id?.open_id === this.botOpenId))) {
       if(sender.sender_type==='user'&&this.store.data.groups?.includes(m.chat_id)&&['image','post'].includes(m.message_type)){
         this.store.data.recentMedia??={};const entries=this.store.data.recentMedia[m.chat_id]||[];
         this.store.data.recentMedia[m.chat_id]=[...entries.filter(x=>x.message.message_id!==m.message_id&&Date.now()-x.at<300000),{at:Date.now(),sender:user,message:m}].slice(-10);this.store.save();
@@ -202,7 +206,7 @@ export class Bot {
       job.finishedAt = new Date().toISOString();
       this.store.save();
       if (!result?.silent) await reply((result?.text??result) || '执行完成，本次没有文字回复。',{mentionBot:isBot&&result?.mentionBot===true});
-      if(!result?.suppressed)this.onConversation({message:m,sender:user,text:prepared.text,answer:String(result?.text??result)});
+      if(!result?.suppressed)this.onConversation({message:m,sender:user,senderInfo,text:prepared.text,answer:String(result?.text??result)});
       this.log('task_completed', { elapsedMs: Date.now() - started });
     } catch (error) {
       await progress.close();

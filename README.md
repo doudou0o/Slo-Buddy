@@ -25,6 +25,7 @@ It is a source-based application for people comfortable running a Node.js servic
 | :--- | :--- |
 | **Conversations** | Chat privately or mention the buddy in an authorized group. Keep topic replies inside the original topic. Connect multiple Feishu applications to one service. |
 | **Personality** | Configure personality, habits, tone, and group rules. Optionally read your local base instructions. |
+| **Proactive companionship** | Keep scoped, expiring conversation clues, select a suitable topic, and start a conversation within configured limits. Includes dry-run previews, editable prompts, and verified historical imports. Disabled by default. |
 | **Memory & knowledge** | Maintain background knowledge and retrieve conversation-scoped facts from local SQLite storage. Let the model request memory updates through controlled tools. |
 | **Images & documents** | Understand supported images and references, generate images when supported by your Codex account, work with authorized Feishu documents, and archive selected group images. |
 | **Interactive responses** | Send formatted messages, cards with choices or text input, real member mentions, and progress updates for longer tasks. |
@@ -33,6 +34,8 @@ It is a source-based application for people comfortable running a Node.js servic
 | **Local operations** | Manage connections and settings in a web console, inspect recent service events, and run the service in the background on macOS. |
 
 Requests in the same conversation are processed sequentially, with up to 20 waiting requests. Across conversations, the service processes up to three requests concurrently.
+
+See [Proactive companionship · Default Harness](docs/COMPANIONSHIP.md) for configuration and behavior.
 
 ## Architecture
 
