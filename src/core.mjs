@@ -1,3 +1,4 @@
+import {startTask,recordOperation,finishTask,formatTask} from './task-records.mjs';
 import {ProgressReporter} from './progress.mjs';
 import {conversationKey} from './message-delivery.mjs';
 import fs from 'node:fs';
@@ -23,8 +24,9 @@ export class Store {
     this.data = fs.existsSync(this.file) ? JSON.parse(fs.readFileSync(this.file, 'utf8')) :
       { users: [], pairing: crypto.randomBytes(12).toString('hex'), threads: {}, seen: {}, jobs: {} };
     for (const job of Object.values(this.data.jobs)) {
-      if (job.status === 'running') job.status = 'interrupted';
+      if (['running','delivering'].includes(job.status)) job.status = 'interrupted';
     }
+    for(const records of Object.values(this.data.taskRecords||{}))for(const r of records)if(['running','delivering'].includes(r.status)){r.status='interrupted';r.progress='服务重启，先核查已有交付再继续';}
     this.save();
   }
   save() {
@@ -143,11 +145,16 @@ export class Bot {
     if (!media && (m.message_type !== 'text' || !text)) { await reply('暂不支持这类消息。可以发送文字、图片或图文消息；群内请 @智能体。'); return; }
     if (text.length > 20000) { await reply('这条消息太长，请拆成几条发送。'); return; }
     if (['/help', '帮助'].includes(text)) {
-      await reply('私聊直接发送任务，群里请先 @智能体。\n/status 或 查看进度：查看当前任务\n/stop 或 停止任务：停止执行\n/new 或 新建会话：清空会话上下文\n/ping：检查服务\n工作目录：Slo-Buddy/workspace。请求按会话排队，/stop 同时取消此前排队请求。私聊仅响应已配对用户；所有者首次在群内 @ 后，群成员也可 @ 使用。每个群共享上下文，与私聊隔离。群内回复对群成员可见。'); return;
+      await reply('私聊直接发送任务，群里请先 @智能体。\n/status 或 查看进度：查看当前任务\n/tasks：查看本会话最近5项任务与交付证据\n/stop 或 停止任务：停止执行\n/new 或 新建会话：清空会话上下文\n/ping：检查服务\n工作目录：Slo-Buddy/workspace。请求按会话排队，/stop 同时取消此前排队请求。私聊仅响应已配对用户；所有者首次在群内 @ 后，群成员也可 @ 使用。每个群共享上下文，与私聊隔离。群内回复对群成员可见。'); return;
     }
     if (text === '/ping') { await reply('pong · Slo-Buddy 在线'); return; }
+    if (text === '/tasks') {
+      const records=this.store.data.taskRecords?.[key]||[];await reply(records.length?records.slice(-5).reverse().map(formatTask).join('\n\n'):'当前会话还没有任务记录。');return;
+    }
     if (['/status', '查看进度'].includes(text)) {
       const job = this.store.data.jobs[key];
+      const record=this.store.data.taskRecords?.[key]?.at(-1);
+      if(record){await reply(formatTask(record)+`\n等待处理：${this.queueCounts.get(key)||0}条`);return;}
       await reply((job ? `状态：${job.status}\n${job.progress ?? ''}\n开始时间：${job.startedAt}` : '目前没有任务。')+`\n等待处理：${this.queueCounts.get(key)||0}条`); return;
     }
     if (m.chat_type === 'group' && !owner && ['/stop', '停止任务', '/new', '新建会话'].includes(text)) { await reply('只有所有者可以停止群任务或清空群上下文。'); return; }
@@ -168,7 +175,7 @@ export class Bot {
     }
     const controller = new AbortController();
     this.active.set(key, controller);
-    const job = { status: 'running', startedAt: new Date().toISOString(), progress: '准备执行' };
+    const job = startTask(this.store,key,{id:m.message_id,goal:text||'[媒体任务]'});
     this.store.data.jobs[key] = job;
     this.store.save();
     const timer = setTimeout(() => controller.abort(new Error('任务达到时间上限')), this.timeoutMs);
@@ -192,9 +199,11 @@ export class Bot {
       const senderInfo = { id: user, name: name || (isBot ? '其他智能体' : '未获取姓名的成员'), type: isBot ? 'bot' : 'user', owner };
       const history = this.store.data.history[key] || [];
       const result = await this.agent.run(prepared.text, {
+        taskContext:(this.store.data.taskRecords[key]||[]).filter(r=>r.id!==job.id).slice(-3).map(formatTask),
         sender: senderInfo, chatType: m.chat_type, history: history.slice(-this.historyLimit()),
         messageId:m.message_id,chatId: m.chat_id, topicId:m.thread_id||'',replyToMessageId:m.thread_id?m.message_id:'', images: prepared.images,
         threadId: this.store.data.threads[key], signal: controller.signal,
+        onTaskEvent:event=>{recordOperation(job,event);this.store.save();if(event.kind==='request_plan')this.log('task_plan_updated',{chatId:m.chat_id,topicId:m.thread_id||'',messageId:m.message_id,stage:job.plan.steps.map(s=>s.id+':'+s.status).join('，')});},
         onTiming: (stage, elapsedMs) => this.log('agent_timing', { stage, elapsedMs,chatId:m.chat_id,topicId:m.thread_id||'',messageId:m.message_id }),
         onThread: id => { this.store.data.threads[key] = id; this.store.save(); },
         onUserProgress:text=>progress.report(text),
@@ -202,15 +211,28 @@ export class Bot {
       });
       this.store.data.history[key] = [...history, { at: new Date().toISOString(), sender: senderInfo, text: prepared.text.slice(0,4000), imageCount: prepared.images.length }, ...(result?.suppressed?[]:[{ at: new Date().toISOString(), sender: { id: 'assistant', name: '智能体' }, text: String(result?.text ?? result).slice(0,4000) }])].slice(-this.historyLimit());
       await progress.close();
-      job.status = result?.waitingUser?'waiting_user':'completed';
+      job.status = 'delivering';
       job.finishedAt = new Date().toISOString();
       this.store.save();
-      if (!result?.silent) await reply((result?.text??result) || '执行完成，本次没有文字回复。',{mentionBot:isBot&&result?.mentionBot===true});
+      if (!result?.silent) {
+        const finalText=String((result?.text??result)||'执行完成，本次没有文字回复。');
+        let index=0;for(const part of splitText(isBot?finalText.replace(/<at\b[^>]*>[\s\S]*?<\/at>/gi,''):finalText)) {
+          controller.signal.throwIfAborted();
+          const uuid=crypto.createHash('sha256').update(`${m.message_id}:final:${index++}:${part}`).digest('hex').slice(0,32);
+          const receipt=await this.send(m.chat_id,isBot&&result?.mentionBot===true?'<at user_id="'+user+'"></at> '+part:part,uuid,m.thread_id?{replyToMessageId:m.message_id,topicId:m.thread_id}:{});
+          job.deliveries.push({messageId:receipt?.message_id||null,verified:receipt?.deliveryVerified===true});this.store.save();
+        }
+      }
+      controller.signal.throwIfAborted();
+      finishTask(job,{waitingUser:result?.waitingUser,suppressed:result?.suppressed});
+      if(job.deliveries.some(d=>!d.verified&&d.messageId))job.status='needs_review';
+      this.store.save();
       if(!result?.suppressed)this.onConversation({message:m,sender:user,senderInfo,text:prepared.text,answer:String(result?.text??result)});
       this.log('task_completed', { elapsedMs: Date.now() - started });
     } catch (error) {
       await progress.close();
       job.status = controller.signal.aborted ? 'stopped' : 'failed';
+      job.finishedAt=new Date().toISOString();
       job.progress = controller.signal.aborted ? String(controller.signal.reason?.message ?? '已停止') : '执行失败，请查看本地服务日志';
       this.store.save();
       this.log('task_failed', { error: error.message });
